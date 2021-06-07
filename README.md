@@ -2,6 +2,7 @@
 Something to inspire myself to get more organized and learn go.
 For now, todo manager. In the future, useful!
 
+![](./screenshot.png)
 ## Usage
 Currently only clone and run. In the future, a package!
 ```
