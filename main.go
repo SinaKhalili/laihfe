@@ -34,7 +34,8 @@ const (
 
 type model struct {
 	textInput      textinput.Model
-	currTodo       []string
+	currTodo       int
+	todos          []string
 	currMode       Modes
 	cursorPosition int
 	selected       map[int]struct{}
@@ -78,8 +79,9 @@ func initialModel() model {
 
 	return model{
 		textInput: ti,
-		currTodo:  texts,
+		todos:     texts,
 		currMode:  INSERT,
+		currTodo:  -1,
 		selected:  selected,
 		err:       nil,
 	}
@@ -103,7 +105,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currMode = NORMAL
 				return m, cmd
 			case tea.KeyEnter:
-				m.currTodo = append(m.currTodo, m.textInput.Value())
+				if m.currTodo != -1 {
+					m.todos[m.currTodo] = m.textInput.Value()
+				} else {
+					m.todos = append(m.todos, m.textInput.Value())
+				}
+				m.currTodo = -1
 				m.textInput.Reset()
 				return m, cmd
 			}
@@ -113,7 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				f, err := os.OpenFile(".todos.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 				check(err)
-				for i, elem := range m.currTodo {
+				for i, elem := range m.todos {
 					line := ""
 					if _, ok := m.selected[i]; ok {
 						line += "x"
@@ -131,7 +138,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currMode = INSERT
 				return m, cmd
 			case "j":
-				if m.cursorPosition+1 < len(m.currTodo) {
+				if m.cursorPosition+1 < len(m.todos) {
 					m.cursorPosition += 1
 				}
 				return m, cmd
@@ -139,6 +146,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursorPosition > 0 {
 					m.cursorPosition -= 1
 				}
+				return m, cmd
+			case "c":
+				m.currTodo = m.cursorPosition
+				m.textInput.SetValue(m.todos[m.currTodo])
+				m.textInput.Focus()
+				m.currMode = INSERT
 				return m, cmd
 			case "enter", "l":
 				_, ok := m.selected[m.cursorPosition]
@@ -159,9 +172,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.currMode == INSERT {
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
-	if m.currMode == NORMAL {
-		// Do nothing
-	}
+
 	return m, cmd
 }
 
@@ -170,7 +181,7 @@ func (m model) View() string {
 	if m.currMode == NORMAL {
 		finale.WriteString("\nCurrmode: ⋉ Normal\n")
 		finale.WriteString(
-			"\n| q: quit | i: insert mode | j/k: up/down | enter: toggle completed |\n",
+			"\n| q: quit | i: insert mode | j/k: up/down | enter: toggle completed | c: change item |\n",
 		)
 	}
 	if m.currMode == INSERT {
@@ -183,15 +194,21 @@ func (m model) View() string {
 		m.textInput.View(),
 	)
 
-	for index, elem := range m.currTodo {
+	for index, elem := range m.todos {
+		checked := " " // Default: it's not checked
+		dirty := ""    // Default: it's not being changed
+		pointer := " " // Default: it's not being pointed at
+
 		if index == m.cursorPosition && m.currMode == NORMAL {
-			fmt.Fprint(&finale, "👉")
+			pointer = "👉"
 		}
-		checked := " "
+		if index == m.currTodo {
+			dirty = "*"
+		}
 		if _, ok := m.selected[index]; ok {
 			checked = "x"
 		}
-		fmt.Fprintf(&finale, "[%s] %s\n", checked, elem)
+		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, elem, dirty)
 	}
 
 	return finale.String()
