@@ -4,6 +4,7 @@ package main
 // component library.
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -15,6 +16,32 @@ import (
 )
 
 func main() {
+	isListModePtr := flag.Bool("l", false, "Set to only output the current todos and exit immediately")
+	flag.Parse()
+
+	if *isListModePtr {
+		if _, err := os.Stat("./.todos.txt"); os.IsNotExist(err) {
+			file, err := os.Create(".todos.txt")
+			check(err)
+			defer file.Close()
+		}
+		dat, err := ioutil.ReadFile("./.todos.txt")
+		check(err)
+
+		for _, elem := range strings.Split(string(dat), "\n") {
+			if elem != "" {
+				parsedLine := elem[1:]
+				if elem[0] == 'x' {
+					fmt.Printf("[x] ")
+				} else {
+					fmt.Printf("[ ] ")
+				}
+				fmt.Printf("%s\n", parsedLine)
+			}
+		}
+		return
+	}
+
 	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 
 	if err := p.Start(); err != nil {
@@ -46,6 +73,13 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
+}
+
+func remove(slice []string, s int) []string {
+	if len(slice) > 0 {
+		return append(slice[:s], slice[s+1:]...)
+	}
+	return make([]string, 0)
 }
 
 func initialModel() model {
@@ -117,16 +151,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.currMode == NORMAL {
 			switch msg.String() {
+			case "Q":
+				return m, tea.Quit
 			case "q":
 				f, err := os.OpenFile(".todos.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 				check(err)
 				for i, elem := range m.todos {
 					line := ""
+
 					if _, ok := m.selected[i]; ok {
 						line += "x"
 					} else {
 						line += " "
 					}
+
 					line += elem
 					_, err2 := f.Write([]byte(line + "\n"))
 					check(err2)
@@ -152,6 +190,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.SetValue(m.todos[m.currTodo])
 				m.textInput.Focus()
 				m.currMode = INSERT
+				return m, cmd
+			case "d":
+				m.todos = remove(m.todos, m.cursorPosition)
+				if m.cursorPosition == len(m.todos) {
+					m.cursorPosition--
+				}
 				return m, cmd
 			case "enter", "l":
 				_, ok := m.selected[m.cursorPosition]
