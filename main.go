@@ -1,7 +1,5 @@
 package main
 
-// A simple todo manager on the command line!
-
 import (
 	"flag"
 	"fmt"
@@ -16,7 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var version string = "0.0.1"
+var version string = "0.0.2"
 
 // Global todo file path
 var TodoFilePath string
@@ -221,6 +219,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case "d":
 				m.todos = remove(m.todos, m.cursorPosition)
+
+				// TODO: make this more efficient
+				newMap := make(map[int]struct{})
+				for key, _ := range m.selected {
+					if key >= m.cursorPosition {
+						newMap[key-1] = struct{}{}
+					} else {
+						newMap[key] = struct{}{}
+					}
+				}
+				m.selected = newMap
+
 				if m.cursorPosition == len(m.todos) {
 					m.cursorPosition--
 				}
