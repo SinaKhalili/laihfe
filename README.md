@@ -16,4 +16,9 @@ Todos are read and stored in a plain text file `.todos.txt`.
 Type `i` to go into insert mode and write a todo. `esc` will put you
 into normal mode where you can toggle todos on and off.
 
+## Keep it top of mind
+Add the `laihfe -l` command at the end of your `bashrc`/`zshrc` to
+spit out your current todos. That way you can see them every time
+you open a terminal!
+
 Uses the wonderful [bubbletea](https://github.com/charmbracelet/bubbletea) package for the TUI. 
