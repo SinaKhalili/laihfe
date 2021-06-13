@@ -15,7 +15,7 @@ import (
 	"github.com/muesli/termenv"
 )
 
-var version string = "0.0.2"
+var version string = "0.0.3"
 
 // Global todo file path
 var TodoFilePath string
@@ -185,6 +185,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEsc:
 				m.textInput.Blur()
 				m.currMode = NORMAL
+				m.cursorPosition = moveDownToNextAliveTodo(m)
 				return m, cmd
 			case tea.KeyEnter:
 				if m.currTodo != -1 {
@@ -243,7 +244,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "d":
 				m.selected[m.cursorPosition] = TOMBSTONE
 				m.undoList = append(m.undoList, m.cursorPosition)
-				m.cursorPosition = moveUpToNextAliveTodo(m)
+				m.cursorPosition--
+				m.cursorPosition = moveDownToNextAliveTodo(m)
+				if m.selected[m.cursorPosition] == TOMBSTONE {
+					m.cursorPosition = moveUpToNextAliveTodo(m)
+				}
 				return m, cmd
 			case "u":
 				if len(m.undoList) > 0 {
