@@ -8,23 +8,52 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+var version string = "0.0.1"
+
+// Global todo file path
+var TodoFilePath string
+
 func main() {
-	isListModePtr := flag.Bool("l", false, "Set to only output the current todos and exit immediately")
+	isListModePtr := flag.Bool("l",
+		false,
+		"Set to only output the current todos and exit immediately",
+	)
+	versionPtr := flag.Bool("v",
+		false,
+		"Show version number and exit",
+	)
+
+	usr, _ := user.Current()
+	dir := usr.HomeDir
+	todoFilePathPtr := flag.String(
+		"f",
+		filepath.Join(dir, ".todos.txt"),
+		"Path to the .todos.txt file which laihfe will read.\nWill default to `.todos.txt` in the current user's home folder.",
+	)
+
 	flag.Parse()
+	TodoFilePath = *todoFilePathPtr
+
+	if *versionPtr {
+		fmt.Printf("%s\n", version)
+		return
+	}
 
 	if *isListModePtr {
-		if _, err := os.Stat("./.todos.txt"); os.IsNotExist(err) {
-			file, err := os.Create(".todos.txt")
+		if _, err := os.Stat(TodoFilePath); os.IsNotExist(err) {
+			file, err := os.Create(TodoFilePath)
 			check(err)
 			defer file.Close()
 		}
-		dat, err := ioutil.ReadFile("./.todos.txt")
+		dat, err := ioutil.ReadFile(TodoFilePath)
 		check(err)
 
 		for _, elem := range strings.Split(string(dat), "\n") {
@@ -88,13 +117,13 @@ func initialModel() model {
 	ti.CharLimit = 156
 	ti.Width = 20
 
-	if _, err := os.Stat("./.todos.txt"); os.IsNotExist(err) {
-		file, err := os.Create(".todos.txt")
+	if _, err := os.Stat(TodoFilePath); os.IsNotExist(err) {
+		file, err := os.Create(TodoFilePath)
 		check(err)
 		defer file.Close()
 	}
 
-	dat, err := ioutil.ReadFile("./.todos.txt")
+	dat, err := ioutil.ReadFile(TodoFilePath)
 
 	selected := make(map[int]struct{})
 	var texts []string
@@ -153,7 +182,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "Q":
 				return m, tea.Quit
 			case "q":
-				f, err := os.OpenFile(".todos.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+				f, err := os.OpenFile(TodoFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 				check(err)
 				for i, elem := range m.todos {
 					line := ""
