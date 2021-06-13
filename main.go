@@ -1,7 +1,6 @@
 package main
 
-// A simple program demonstrating the text input component from the Bubbles
-// component library.
+// A simple todo manager on the command line!
 
 import (
 	"flag"
