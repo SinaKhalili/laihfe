@@ -12,12 +12,21 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
 )
 
 var version string = "0.0.2"
 
 // Global todo file path
 var TodoFilePath string
+
+// View styling
+var (
+	term    = termenv.ColorProfile()
+	keyword = makeFgStyle("211")
+	subtle  = makeFgStyle("241")
+	dot     = colorFg(" • ", "236")
+)
 
 func main() {
 	isListModePtr := flag.Bool("l",
@@ -85,14 +94,23 @@ const (
 	INSERT
 )
 
+type TodoStates uint
+
+const (
+	DONE TodoStates = iota
+	NOT_DONE
+	TOMBSTONE
+)
+
 type model struct {
 	textInput      textinput.Model
 	currTodo       int
 	todos          []string
 	currMode       Modes
 	cursorPosition int
-	selected       map[int]struct{}
+	selected       map[int]TodoStates
 	err            error
+	undoList       []int
 }
 
 func check(e error) {
@@ -123,7 +141,8 @@ func initialModel() model {
 
 	dat, err := ioutil.ReadFile(TodoFilePath)
 
-	selected := make(map[int]struct{})
+	selected := make(map[int]TodoStates)
+	undoList := make([]int, 0)
 	var texts []string
 
 	for _, elem := range strings.Split(string(dat), "\n") {
@@ -131,7 +150,9 @@ func initialModel() model {
 			parsedLine := elem[1:]
 			texts = append(texts, parsedLine)
 			if elem[0] == 'x' {
-				selected[len(texts)-1] = struct{}{}
+				selected[len(texts)-1] = DONE
+			} else {
+				selected[len(texts)-1] = NOT_DONE
 			}
 		}
 	}
@@ -144,6 +165,7 @@ func initialModel() model {
 		currTodo:  -1,
 		selected:  selected,
 		err:       nil,
+		undoList:  undoList,
 	}
 }
 
@@ -169,6 +191,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.todos[m.currTodo] = m.textInput.Value()
 				} else {
 					m.todos = append(m.todos, m.textInput.Value())
+					m.selected[len(m.todos)-1] = NOT_DONE
 				}
 				m.currTodo = -1
 				m.textInput.Reset()
@@ -184,11 +207,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				check(err)
 				for i, elem := range m.todos {
 					line := ""
+					currTodoState := m.selected[i]
 
-					if _, ok := m.selected[i]; ok {
+					switch currTodoState {
+					case DONE:
 						line += "x"
-					} else {
+					case NOT_DONE:
 						line += " "
+					case TOMBSTONE:
+						continue
 					}
 
 					line += elem
@@ -202,14 +229,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currMode = INSERT
 				return m, cmd
 			case "j":
-				if m.cursorPosition+1 < len(m.todos) {
-					m.cursorPosition += 1
-				}
+				m.cursorPosition = moveDownToNextAliveTodo(m)
 				return m, cmd
 			case "k":
-				if m.cursorPosition > 0 {
-					m.cursorPosition -= 1
-				}
+				m.cursorPosition = moveUpToNextAliveTodo(m)
 				return m, cmd
 			case "c":
 				m.currTodo = m.cursorPosition
@@ -218,29 +241,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.currMode = INSERT
 				return m, cmd
 			case "d":
-				m.todos = remove(m.todos, m.cursorPosition)
-
-				// TODO: make this more efficient
-				newMap := make(map[int]struct{})
-				for key, _ := range m.selected {
-					if key >= m.cursorPosition {
-						newMap[key-1] = struct{}{}
-					} else {
-						newMap[key] = struct{}{}
-					}
-				}
-				m.selected = newMap
-
-				if m.cursorPosition == len(m.todos) {
-					m.cursorPosition--
+				m.selected[m.cursorPosition] = TOMBSTONE
+				m.undoList = append(m.undoList, m.cursorPosition)
+				m.cursorPosition = moveUpToNextAliveTodo(m)
+				return m, cmd
+			case "u":
+				if len(m.undoList) > 0 {
+					mostRecentKill := pop(&m.undoList)
+					m.selected[mostRecentKill] = NOT_DONE
 				}
 				return m, cmd
 			case "enter", "l":
-				_, ok := m.selected[m.cursorPosition]
-				if ok {
-					delete(m.selected, m.cursorPosition)
-				} else {
-					m.selected[m.cursorPosition] = struct{}{}
+				todoState := m.selected[m.cursorPosition]
+
+				if todoState == DONE {
+					m.selected[m.cursorPosition] = NOT_DONE
+				} else if todoState == NOT_DONE {
+					m.selected[m.cursorPosition] = DONE
 				}
 			}
 		}
@@ -258,12 +275,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func pop(list *[]int) int {
+	// Fails on small length
+	length := len(*list)
+	last_elem := (*list)[length-1]
+	*list = append((*list)[:length-1])
+	return last_elem
+}
+func moveDownToNextAliveTodo(m model) int {
+	// Helper to move down skipping the TOMBSTONE todos
+
+	oldCurr := m.cursorPosition
+	newCursor := m.cursorPosition
+
+	if newCursor+1 < len(m.todos) {
+		newCursor += 1
+	}
+	for m.selected[newCursor] == TOMBSTONE {
+		newCursor++
+	}
+	if newCursor >= len(m.todos) {
+		newCursor = oldCurr
+	}
+
+	return newCursor
+}
+
+func moveUpToNextAliveTodo(m model) int {
+	// Helper to move up through the TOMBSTONE todos
+
+	oldCurr := m.cursorPosition
+	newCursor := m.cursorPosition
+
+	if newCursor > 0 {
+		newCursor -= 1
+	}
+	for m.selected[newCursor] == TOMBSTONE {
+		newCursor--
+	}
+	if newCursor < 0 {
+		newCursor = oldCurr
+	}
+
+	return newCursor
+}
+
 func (m model) View() string {
 	var finale strings.Builder
 	if m.currMode == NORMAL {
 		finale.WriteString("\nCurrmode: ⋉ Normal\n")
 		finale.WriteString(
-			"\n| q: quit | i: insert mode | j/k: up/down | enter: toggle completed | c: change item |\n",
+			"\n" +
+				subtle("|") +
+				"q: quit" +
+				subtle("|") +
+				"i: insert mode" +
+				subtle("|") +
+				"j/k: up/down" +
+				subtle("|") +
+				keyword("enter: toggle completed") +
+				subtle("|") +
+				"c: change item \n",
 		)
 	}
 	if m.currMode == INSERT {
@@ -287,11 +359,25 @@ func (m model) View() string {
 		if index == m.currTodo {
 			dirty = "*"
 		}
-		if _, ok := m.selected[index]; ok {
+		switch m.selected[index] {
+		case DONE:
 			checked = "x"
+		case NOT_DONE: // Do nothing
+		case TOMBSTONE:
+			continue
 		}
 		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, elem, dirty)
 	}
 
 	return finale.String()
+}
+
+// Color a string foreground
+func makeFgStyle(color string) func(string) string {
+	return termenv.Style{}.Foreground(term.Color(color)).Styled
+}
+
+// Color a string's foreground with the given value.
+func colorFg(val, color string) string {
+	return termenv.String(val).Foreground(term.Color(color)).String()
 }
