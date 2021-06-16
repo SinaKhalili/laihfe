@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -42,8 +43,8 @@ func main() {
 	dir := usr.HomeDir
 	todoFilePathPtr := flag.String(
 		"f",
-		filepath.Join(dir, ".todos.txt"),
-		"Path to the .todos.txt file which laihfe will read.\nWill default to `.todos.txt` in the current user's home folder.",
+		filepath.Join(dir, ".todos.json"),
+		"Path to the .todos.txt file which laihfe will read.\nWill default to `.todos.json` in the current user's home folder.",
 	)
 
 	flag.Parse()
@@ -63,17 +64,10 @@ func main() {
 		dat, err := ioutil.ReadFile(TodoFilePath)
 		check(err)
 
-		for _, elem := range strings.Split(string(dat), "\n") {
-			if elem != "" {
-				parsedLine := elem[1:]
-				if elem[0] == 'x' {
-					fmt.Printf("[x] ")
-				} else {
-					fmt.Printf("[ ] ")
-				}
-				fmt.Printf("%s\n", parsedLine)
-			}
-		}
+		var todos ToDos
+		json.Unmarshal(dat, &todos)
+
+		printTodos(todos)
 		return
 	}
 
@@ -102,13 +96,21 @@ const (
 	TOMBSTONE
 )
 
+type ToDos struct {
+	Items []ToDo `json:"todos"`
+}
+
+type ToDo struct {
+	Text  string     `json:"text"`
+	State TodoStates `json:"state"`
+}
+
 type model struct {
 	textInput      textinput.Model
 	currTodo       int
-	todos          []string
+	todos          ToDos
 	currMode       Modes
 	cursorPosition int
-	selected       map[int]TodoStates
 	err            error
 	undoList       []int
 }
@@ -126,6 +128,20 @@ func remove(slice []string, s int) []string {
 	return make([]string, 0)
 }
 
+func printTodos(todos ToDos) {
+	for index, elem := range todos.Items {
+		checked := " "
+		switch todos.Items[index].State {
+		case DONE:
+			checked = "x"
+		case NOT_DONE: // Do nothing
+		case TOMBSTONE:
+			continue
+		}
+		fmt.Printf("[%s] %s\n", checked, elem.Text)
+	}
+}
+
 func initialModel() model {
 	ti := textinput.NewModel()
 	ti.Placeholder = "Hack the planet"
@@ -140,30 +156,18 @@ func initialModel() model {
 	}
 
 	dat, err := ioutil.ReadFile(TodoFilePath)
-
-	selected := make(map[int]TodoStates)
-	undoList := make([]int, 0)
-	var texts []string
-
-	for _, elem := range strings.Split(string(dat), "\n") {
-		if elem != "" {
-			parsedLine := elem[1:]
-			texts = append(texts, parsedLine)
-			if elem[0] == 'x' {
-				selected[len(texts)-1] = DONE
-			} else {
-				selected[len(texts)-1] = NOT_DONE
-			}
-		}
-	}
 	check(err)
+
+	undoList := make([]int, 0)
+
+	var todos ToDos
+	json.Unmarshal(dat, &todos)
 
 	return model{
 		textInput: ti,
-		todos:     texts,
+		todos:     todos,
 		currMode:  INSERT,
 		currTodo:  -1,
-		selected:  selected,
 		err:       nil,
 		undoList:  undoList,
 	}
@@ -189,10 +193,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case tea.KeyEnter:
 				if m.currTodo != -1 {
-					m.todos[m.currTodo] = m.textInput.Value()
+					m.todos.Items[m.currTodo].Text = m.textInput.Value()
 				} else {
-					m.todos = append(m.todos, m.textInput.Value())
-					m.selected[len(m.todos)-1] = NOT_DONE
+					m.todos.Items = append(m.todos.Items, ToDo{
+						Text:  m.textInput.Value(),
+						State: NOT_DONE,
+					})
 				}
 				m.currTodo = -1
 				m.textInput.Reset()
@@ -204,26 +210,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "Q":
 				return m, tea.Quit
 			case "q":
-				f, err := os.OpenFile(TodoFilePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
-				check(err)
-				for i, elem := range m.todos {
-					line := ""
-					currTodoState := m.selected[i]
-
-					switch currTodoState {
-					case DONE:
-						line += "x"
-					case NOT_DONE:
-						line += " "
-					case TOMBSTONE:
-						continue
-					}
-
-					line += elem
-					_, err2 := f.Write([]byte(line + "\n"))
-					check(err2)
-				}
-				defer f.Close()
+				f, _ := json.MarshalIndent(m.todos, "", " ")
+				_ = ioutil.WriteFile(TodoFilePath, f, 0644)
 				return m, tea.Quit
 			case "i":
 				m.textInput.Focus()
@@ -237,32 +225,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			case "c":
 				m.currTodo = m.cursorPosition
-				m.textInput.SetValue(m.todos[m.currTodo])
+				m.textInput.SetValue(m.todos.Items[m.currTodo].Text)
 				m.textInput.Focus()
 				m.currMode = INSERT
 				return m, cmd
 			case "d":
-				m.selected[m.cursorPosition] = TOMBSTONE
+				m.todos.Items[m.cursorPosition].State = TOMBSTONE
 				m.undoList = append(m.undoList, m.cursorPosition)
 				m.cursorPosition--
 				m.cursorPosition = moveDownToNextAliveTodo(m)
-				if m.selected[m.cursorPosition] == TOMBSTONE {
+				if m.todos.Items[m.cursorPosition].State == TOMBSTONE {
 					m.cursorPosition = moveUpToNextAliveTodo(m)
 				}
 				return m, cmd
 			case "u":
 				if len(m.undoList) > 0 {
 					mostRecentKill := pop(&m.undoList)
-					m.selected[mostRecentKill] = NOT_DONE
+					m.todos.Items[mostRecentKill].State = NOT_DONE
 				}
 				return m, cmd
 			case "enter", "l":
-				todoState := m.selected[m.cursorPosition]
+				todostate := m.todos.Items[m.cursorPosition].State
 
-				if todoState == DONE {
-					m.selected[m.cursorPosition] = NOT_DONE
-				} else if todoState == NOT_DONE {
-					m.selected[m.cursorPosition] = DONE
+				if todostate == DONE {
+					m.todos.Items[m.cursorPosition].State = NOT_DONE
+				} else if todostate == NOT_DONE {
+					m.todos.Items[m.cursorPosition].State = DONE
 				}
 			}
 		}
@@ -293,13 +281,13 @@ func moveDownToNextAliveTodo(m model) int {
 	oldCurr := m.cursorPosition
 	newCursor := m.cursorPosition
 
-	if newCursor+1 < len(m.todos) {
+	if newCursor+1 < len(m.todos.Items) {
 		newCursor += 1
 	}
-	for m.selected[newCursor] == TOMBSTONE {
+	for m.todos.Items[newCursor].State == TOMBSTONE {
 		newCursor++
 	}
-	if newCursor >= len(m.todos) {
+	if newCursor >= len(m.todos.Items) {
 		newCursor = oldCurr
 	}
 
@@ -315,7 +303,7 @@ func moveUpToNextAliveTodo(m model) int {
 	if newCursor > 0 {
 		newCursor -= 1
 	}
-	for m.selected[newCursor] == TOMBSTONE {
+	for m.todos.Items[newCursor].State == TOMBSTONE {
 		newCursor--
 	}
 	if newCursor < 0 {
@@ -353,7 +341,7 @@ func (m model) View() string {
 		m.textInput.View(),
 	)
 
-	for index, elem := range m.todos {
+	for index, elem := range m.todos.Items {
 		checked := " " // Default: it's not checked
 		dirty := ""    // Default: it's not being changed
 		pointer := " " // Default: it's not being pointed at
@@ -364,14 +352,14 @@ func (m model) View() string {
 		if index == m.currTodo {
 			dirty = "*"
 		}
-		switch m.selected[index] {
+		switch m.todos.Items[index].State {
 		case DONE:
 			checked = "x"
 		case NOT_DONE: // Do nothing
 		case TOMBSTONE:
 			continue
 		}
-		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, elem, dirty)
+		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, elem.Text, dirty)
 	}
 
 	return finale.String()
