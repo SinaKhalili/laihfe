@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
 
@@ -27,6 +28,7 @@ var (
 	keyword = makeFgStyle("211")
 	subtle  = makeFgStyle("241")
 	dot     = colorFg(" • ", "236")
+	special = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
 )
 
 func main() {
@@ -232,7 +234,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "d":
 				m.todos.Items[m.cursorPosition].State = TOMBSTONE
 				m.undoList = append(m.undoList, m.cursorPosition)
-				m.cursorPosition--
 				m.cursorPosition = moveDownToNextAliveTodo(m)
 				if m.todos.Items[m.cursorPosition].State == TOMBSTONE {
 					m.cursorPosition = moveUpToNextAliveTodo(m)
@@ -275,16 +276,14 @@ func pop(list *[]int) int {
 	*list = append((*list)[:length-1])
 	return last_elem
 }
+
 func moveDownToNextAliveTodo(m model) int {
 	// Helper to move down skipping the TOMBSTONE todos
 
 	oldCurr := m.cursorPosition
-	newCursor := m.cursorPosition
+	newCursor := m.cursorPosition + 1
 
-	if newCursor+1 < len(m.todos.Items) {
-		newCursor += 1
-	}
-	for m.todos.Items[newCursor].State == TOMBSTONE {
+	for newCursor < len(m.todos.Items) && m.todos.Items[newCursor].State == TOMBSTONE {
 		newCursor++
 	}
 	if newCursor >= len(m.todos.Items) {
@@ -298,12 +297,9 @@ func moveUpToNextAliveTodo(m model) int {
 	// Helper to move up through the TOMBSTONE todos
 
 	oldCurr := m.cursorPosition
-	newCursor := m.cursorPosition
+	newCursor := m.cursorPosition - 1
 
-	if newCursor > 0 {
-		newCursor -= 1
-	}
-	for m.todos.Items[newCursor].State == TOMBSTONE {
+	for newCursor >= 0 && m.todos.Items[newCursor].State == TOMBSTONE {
 		newCursor--
 	}
 	if newCursor < 0 {
