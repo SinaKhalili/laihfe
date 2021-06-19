@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -103,8 +104,11 @@ type ToDos struct {
 }
 
 type ToDo struct {
-	Text  string     `json:"text"`
-	State TodoStates `json:"state"`
+	Text          string     `json:"text"`
+	State         TodoStates `json:"state"`
+	Repeat        string     `json:"repeat"`
+	DateAdded     string     `json:"data_added"`
+	DateCompleted string     `json:"date_completed"`
 }
 
 type model struct {
@@ -198,8 +202,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.todos.Items[m.currTodo].Text = m.textInput.Value()
 				} else {
 					m.todos.Items = append(m.todos.Items, ToDo{
-						Text:  m.textInput.Value(),
-						State: NOT_DONE,
+						Text:          m.textInput.Value(),
+						State:         NOT_DONE,
+						DateAdded:     time.Now().String(),
+						DateCompleted: "None",
+						Repeat:        "None",
 					})
 				}
 				m.currTodo = -1
@@ -337,10 +344,22 @@ func (m model) View() string {
 		m.textInput.View(),
 	)
 
+	var checkMark = lipgloss.NewStyle().SetString("✓").
+		Foreground(special).
+		String()
+
+	var listDone = func(s string) string {
+		return lipgloss.NewStyle().
+			Strikethrough(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#969B86", Dark: "#696969"}).
+			Render(s)
+	}
+
 	for index, elem := range m.todos.Items {
-		checked := " " // Default: it's not checked
-		dirty := ""    // Default: it's not being changed
-		pointer := " " // Default: it's not being pointed at
+		checked := " "        // Default: it's not checked
+		dirty := ""           // Default: it's not being changed
+		pointer := " "        // Default: it's not being pointed at
+		todoText := elem.Text // Default: It's not crossed out
 
 		if index == m.cursorPosition && m.currMode == NORMAL {
 			pointer = "👉"
@@ -350,12 +369,13 @@ func (m model) View() string {
 		}
 		switch m.todos.Items[index].State {
 		case DONE:
-			checked = "x"
+			checked = checkMark
+			todoText = listDone(todoText)
 		case NOT_DONE: // Do nothing
 		case TOMBSTONE:
 			continue
 		}
-		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, elem.Text, dirty)
+		fmt.Fprintf(&finale, "%s[%s] %s%s\n", pointer, checked, todoText, dirty)
 	}
 
 	return finale.String()
