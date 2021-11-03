@@ -12,7 +12,7 @@ go run main.go
 ```
 
 ## How it works
-Todos are read and stored in a plain text file `.todos.txt`. 
+Todos are read and stored in a plain text json file `.todos.json`. 
 Type `i` to go into insert mode and write a todo. `esc` will put you
 into normal mode where you can toggle todos on and off.
 
