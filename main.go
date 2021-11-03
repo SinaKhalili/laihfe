@@ -153,7 +153,7 @@ func initialModel() model {
 	ti.Placeholder = "Hack the planet"
 	ti.Focus()
 	ti.CharLimit = 156
-	ti.Width = 20
+	ti.Width = 70
 
 	if _, err := os.Stat(TodoFilePath); os.IsNotExist(err) {
 		file, err := os.Create(TodoFilePath)
