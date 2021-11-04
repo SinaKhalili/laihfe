@@ -365,7 +365,7 @@ func (m model) View() string {
 			pointer = "👉"
 		}
 		if index == m.currTodo {
-			dirty = "*"
+			checked = "🟡"
 		}
 		switch m.todos.Items[index].State {
 		case DONE:
